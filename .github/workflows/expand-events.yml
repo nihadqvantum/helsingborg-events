@@ -1,0 +1,38 @@
+name: Expand events.json
+on:
+  push:
+    paths:
+      - "data/events.json.zlib.b64"
+  workflow_dispatch:
+jobs:
+  expand:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decompress events payload
+        run: |
+          python3 <<'PY'
+          import zlib, base64, pathlib, json
+          raw = pathlib.Path("data/events.json.zlib.b64").read_text().strip()
+          data = zlib.decompress(base64.b64decode(raw))
+          text = data.decode("utf-8")
+          events = json.loads(text)
+          out = pathlib.Path("data/events.json")
+          if not text.endswith("\n"):
+              text = text + "\n"
+          out.write_text(text, encoding="utf-8")
+          print("wrote", len(events), "events")
+          PY
+      - name: Commit expanded events.json
+        run: |
+          git config user.name "helsingborg-event-tracker"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/events.json
+          if git diff --staged --quiet; then
+            echo "No changes"
+          else
+            git commit -m "Expand data/events.json from daily scour payload"
+            git push
+          fi
