@@ -37,7 +37,7 @@ function normalize(events: EventItem[]): EventItem[] {
 
 function parseEventsJson(raw: string): EventItem[] | null {
   const t = raw.trim();
-  if (!t || t === 'PLACEHOLDER_REPLACE' || !t.startsWith('[')) return null;
+  if (!t || t === 'PLACEHOLDER_REPLACE' || t === 'PLACEHOLDER_WILL_REPLACE' || !t.startsWith('[')) return null;
   try {
     const data = JSON.parse(t);
     return Array.isArray(data) ? data : null;
@@ -69,13 +69,18 @@ function loadLocal(): EventItem[] {
     const inflated = inflateB64(fs.readFileSync(zlibPath, 'utf8'));
     if (inflated) events = inflated;
   }
+  const generatedZlibPath = path.join(dataDir, 'events.generated.json.zlib.b64');
+  let generated: EventItem[] | null = null;
   if (fs.existsSync(generatedPath)) {
-    const generated = parseEventsJson(fs.readFileSync(generatedPath, 'utf8'));
-    if (generated) {
-      const byId = new Map(events.map((e) => [e.id, e]));
-      for (const g of generated) byId.set(g.id, g);
-      events = Array.from(byId.values());
-    }
+    generated = parseEventsJson(fs.readFileSync(generatedPath, 'utf8'));
+  }
+  if ((!generated || !generated.length) && fs.existsSync(generatedZlibPath)) {
+    generated = inflateB64(fs.readFileSync(generatedZlibPath, 'utf8'));
+  }
+  if (generated && generated.length) {
+    const byId = new Map(events.map((e) => [e.id, e]));
+    for (const g of generated) byId.set(g.id, g);
+    events = Array.from(byId.values());
   }
   return events;
 }
