@@ -7,7 +7,7 @@ PWA for concerts, culture, sports, and city events around Helsingborg.
 - Installable; notify toggle for new events
 - Daily backend search via Vercel cron (`/api/cron` at 06:00 UTC)
 
-Last updated: 2026-09-20 (morning scour)
+Last updated: 2026-09-21 (morning scour)
 
 ```bash
 npm install
