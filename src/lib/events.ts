@@ -1,9 +1,11 @@
 import fs from 'fs';
 import path from 'path';
+import { inflateSync } from 'zlib';
 import type { EventItem } from '@/types/event';
 
 const dataDir = path.join(process.cwd(), 'data');
 const REMOTE = 'https://raw.githubusercontent.com/nihadqvantum/helsingborg-events/main/data/events.json';
+const REMOTE_ZLIB = 'https://raw.githubusercontent.com/nihadqvantum/helsingborg-events/main/data/events.json.zlib.b64';
 
 function isStillOn(e: EventItem, now = new Date()): boolean {
   if (e.end) {
@@ -33,10 +35,49 @@ function normalize(events: EventItem[]): EventItem[] {
     });
 }
 
+function parseEventsJson(raw: string): EventItem[] | null {
+  const t = raw.trim();
+  if (!t || t === 'PLACEHOLDER_REPLACE' || !t.startsWith('[')) return null;
+  try {
+    const data = JSON.parse(t);
+    return Array.isArray(data) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+function inflateB64(b64: string): EventItem[] | null {
+  try {
+    const data = JSON.parse(inflateSync(Buffer.from(b64.trim(), 'base64')).toString('utf8'));
+    return Array.isArray(data) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
 function loadLocal(): EventItem[] {
   const seedPath = path.join(dataDir, 'events.json');
-  if (!fs.existsSync(seedPath)) return [];
-  return JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+  const generatedPath = path.join(dataDir, 'events.generated.json');
+  const zlibPath = path.join(dataDir, 'events.json.zlib.b64');
+
+  let events: EventItem[] = [];
+  if (fs.existsSync(seedPath)) {
+    const parsed = parseEventsJson(fs.readFileSync(seedPath, 'utf8'));
+    if (parsed) events = parsed;
+  }
+  if (!events.length && fs.existsSync(zlibPath)) {
+    const inflated = inflateB64(fs.readFileSync(zlibPath, 'utf8'));
+    if (inflated) events = inflated;
+  }
+  if (fs.existsSync(generatedPath)) {
+    const generated = parseEventsJson(fs.readFileSync(generatedPath, 'utf8'));
+    if (generated) {
+      const byId = new Map(events.map((e) => [e.id, e]));
+      for (const g of generated) byId.set(g.id, g);
+      events = Array.from(byId.values());
+    }
+  }
+  return events;
 }
 
 export function loadEvents(): EventItem[] {
@@ -47,9 +88,24 @@ export async function loadEventsAsync(): Promise<EventItem[]> {
   try {
     const res = await fetch(REMOTE, { next: { revalidate: 300 } });
     if (res.ok) {
-      const data = await res.json();
-      const normalized = normalize(data);
-      if (normalized.length) return normalized;
+      const text = await res.text();
+      const parsed = parseEventsJson(text);
+      if (parsed) {
+        const normalized = normalize(parsed);
+        if (normalized.length) return normalized;
+      }
+    }
+  } catch {
+    // fall through
+  }
+  try {
+    const res = await fetch(REMOTE_ZLIB, { next: { revalidate: 300 } });
+    if (res.ok) {
+      const inflated = inflateB64(await res.text());
+      if (inflated) {
+        const normalized = normalize(inflated);
+        if (normalized.length) return normalized;
+      }
     }
   } catch {
     // fall through
